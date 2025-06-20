@@ -5,18 +5,24 @@ import {
   ReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { useEffect } from 'react';
 import { ChatSheet } from '../chat/chat-sheet';
-import { AgentInstanceContext } from '../context';
+import {
+  AgentChatContext,
+  AgentChatLogContext,
+  AgentInstanceContext,
+} from '../context';
 import FormSheet from '../form-sheet/next';
 import {
   useHandleDrop,
   useSelectCanvasData,
   useValidateConnection,
-  useWatchNodeFormDataChange,
 } from '../hooks';
 import { useAddNode } from '../hooks/use-add-node';
 import { useBeforeDelete } from '../hooks/use-before-delete';
-import { useShowDrawer } from '../hooks/use-show-drawer';
+import { useCacheChatLog } from '../hooks/use-cache-chat-log';
+import { useShowDrawer, useShowLogSheet } from '../hooks/use-show-drawer';
+import { LogSheet } from '../log-sheet';
 import RunSheet from '../run-sheet';
 import { ButtonEdge } from './edge';
 import styles from './index.less';
@@ -37,6 +43,7 @@ import { RetrievalNode } from './node/retrieval-node';
 import { RewriteNode } from './node/rewrite-node';
 import { SwitchNode } from './node/switch-node';
 import { TemplateNode } from './node/template-node';
+import { ToolNode } from './node/tool-node';
 
 const nodeTypes: NodeTypes = {
   ragNode: RagNode,
@@ -57,6 +64,7 @@ const nodeTypes: NodeTypes = {
   group: IterationNode,
   iterationStartNode: IterationStartNode,
   agentNode: AgentNode,
+  toolNode: ToolNode,
 };
 
 const edgeTypes = {
@@ -100,11 +108,26 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     hideDrawer,
   });
 
+  const {
+    addEventList,
+    setCurrentMessageId,
+    currentEventListWithoutMessage,
+    clearEventList,
+  } = useCacheChatLog();
+
+  const { showLogSheet, logSheetVisible, hideLogSheet } = useShowLogSheet({
+    setCurrentMessageId,
+  });
+
   const { handleBeforeDelete } = useBeforeDelete();
 
-  useWatchNodeFormDataChange();
-
   const { addCanvasNode } = useAddNode(reactFlowInstance);
+
+  useEffect(() => {
+    if (!chatVisible) {
+      clearEventList();
+    }
+  }, [chatVisible, clearEventList]);
 
   return (
     <div className={styles.canvasWrapper}>
@@ -128,38 +151,40 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           </marker>
         </defs>
       </svg>
-      <ReactFlow
-        connectionMode={ConnectionMode.Loose}
-        nodes={nodes}
-        onNodesChange={onNodesChange}
-        edges={edges}
-        onEdgesChange={onEdgesChange}
-        fitView
-        onConnect={onConnect}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        onDrop={onDrop}
-        onDragOver={onDragOver}
-        onNodeClick={onNodeClick}
-        onPaneClick={onPaneClick}
-        onInit={setReactFlowInstance}
-        onSelectionChange={onSelectionChange}
-        nodeOrigin={[0.5, 0]}
-        isValidConnection={isValidConnection}
-        defaultEdgeOptions={{
-          type: 'buttonEdge',
-          markerEnd: 'logo',
-          style: {
-            strokeWidth: 2,
-            stroke: 'rgb(202 197 245)',
-          },
-          zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
-        }}
-        deleteKeyCode={['Delete', 'Backspace']}
-        onBeforeDelete={handleBeforeDelete}
-      >
-        <Background />
-      </ReactFlow>
+      <AgentInstanceContext.Provider value={{ addCanvasNode }}>
+        <ReactFlow
+          connectionMode={ConnectionMode.Loose}
+          nodes={nodes}
+          onNodesChange={onNodesChange}
+          edges={edges}
+          onEdgesChange={onEdgesChange}
+          fitView
+          onConnect={onConnect}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+          onNodeClick={onNodeClick}
+          onPaneClick={onPaneClick}
+          onInit={setReactFlowInstance}
+          onSelectionChange={onSelectionChange}
+          nodeOrigin={[0.5, 0]}
+          isValidConnection={isValidConnection}
+          defaultEdgeOptions={{
+            type: 'buttonEdge',
+            markerEnd: 'logo',
+            style: {
+              strokeWidth: 2,
+              stroke: 'rgb(202 197 245)',
+            },
+            zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
+          }}
+          deleteKeyCode={['Delete', 'Backspace']}
+          onBeforeDelete={handleBeforeDelete}
+        >
+          <Background />
+        </ReactFlow>
+      </AgentInstanceContext.Provider>
       {formDrawerVisible && (
         <AgentInstanceContext.Provider value={{ addCanvasNode }}>
           <FormSheet
@@ -173,17 +198,25 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
         </AgentInstanceContext.Provider>
       )}
       {chatVisible && (
-        <ChatSheet
-          visible={chatVisible}
-          hideModal={hideRunOrChatDrawer}
-        ></ChatSheet>
+        <AgentChatContext.Provider value={{ showLogSheet }}>
+          <AgentChatLogContext.Provider
+            value={{ addEventList, setCurrentMessageId }}
+          >
+            <ChatSheet hideModal={hideRunOrChatDrawer}></ChatSheet>
+          </AgentChatLogContext.Provider>
+        </AgentChatContext.Provider>
       )}
-
       {runVisible && (
         <RunSheet
           hideModal={hideRunOrChatDrawer}
           showModal={showChatModal}
         ></RunSheet>
+      )}
+      {logSheetVisible && (
+        <LogSheet
+          hideModal={hideLogSheet}
+          currentEventListWithoutMessage={currentEventListWithoutMessage}
+        ></LogSheet>
       )}
     </div>
   );
